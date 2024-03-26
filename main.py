@@ -1,4 +1,4 @@
-# 1.1
+# 1.1.2
 import asyncio
 import binascii
 from contextlib import asynccontextmanager
@@ -9,7 +9,7 @@ import pywebio.input as input
 import aiosqlite
 import functions
 
-from pywebio.session import run_async
+from pywebio.session import run_async, set_env
 
 # MAX_MESSAGES_CNT = 200
 
@@ -71,6 +71,7 @@ async def _input(label: str, *args, **kwargs):
 
 @pywebio.config(theme='dark')
 async def main():
+    set_env(title='Login', output_animation=False)
     output.toast("Created by mrdan__")
 
     async def join_room():
@@ -84,16 +85,21 @@ async def main():
                 output.toast("No room found with this key", duration=3, color="error")
         success = False
         username = ""
+        user_exists = False
         while not success:
             _username = (await _input("Username", required=True))["data"]
-            agree = (await _input(f"\"{_username}\" is you username? (yes/no)", required=True))["data"]
-            if str(agree).lower() in ["yes", "yh", "ofc", "yeah"]:
+            user = functions.User(_username)
+            async with aiosqlite.connect(functions.room_db(room.id)) as db:
+                user_exists = await user.exists(db)
+            if not user_exists:
+                agree = (await _input(f"\"{_username}\" is you username? (yes/no)", required=True))["data"]
+                if str(agree).lower() in ["yes", "yh", "ofc", "yeah"]:
+                    username = _username
+                    success = True
+            else:
                 username = _username
                 success = True
 
-        user = functions.User(username)
-        async with aiosqlite.connect(functions.room_db(room.id)) as db:
-            user_exists = await user.exists(db)
         if not user_exists:
             output.toast("This account does not exist, a new one will be created")
             success = False
@@ -230,7 +236,7 @@ async def online(user: functions.User, db: aiosqlite.Connection, msg_box: output
                 _offline_list.append(nickname)
                 if nickname in _online_list:
                     _online_list.remove(nickname)
-            elif nickname not in _online_list:
+            elif time.time()-15 < online_timestamp and nickname not in _online_list:
                 msg_box.append(output.put_markdown('`%s`: %s' % ('📢', f'`{nickname}` joins the room.'), sanitize=True))
                 _online_list.append(nickname)
                 if nickname in _offline_list:
@@ -250,6 +256,7 @@ async def online(user: functions.User, db: aiosqlite.Connection, msg_box: output
 
 
 async def chat(user: functions.User, room: functions.Room):
+    set_env(title='Chat', output_animation=False)
     room_db = functions.room_db(room.id)
     msg_box = output.output()
     output.put_scrollable(msg_box, height=300, keep_bottom=True)

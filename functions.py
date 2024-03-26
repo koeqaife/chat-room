@@ -1,4 +1,4 @@
-# 1.1
+# 1.1.2
 import os
 import aiosqlite
 import random
@@ -183,11 +183,10 @@ async def load_room(passphrase: str | None = None) -> Room:
         sql = await db.cursor()
         await room_database(db)
         encryption = await (await sql.execute(
-            "SELECT public_key, private_key, passphrase_sha512 FROM encryption"
+            "SELECT public_key, private_key FROM encryption WHERE passphrase_sha512 = ?",
+            (passphrase_sha512,)
         )).fetchone()
         if encryption is None:
-            return UnknownRoom()
-        if encryption[2] != passphrase_sha512:
             return UnknownRoom()
         public_key, private_key = encryption[0], encryption[1]
         message = 'Test key 123'
