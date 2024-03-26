@@ -14,21 +14,6 @@ from pywebio.session import run_async
 chat_msgs = []
 
 
-# async def refresh_msg(my_name, msg_box):
-#     global chat_msgs
-#     last_idx = len(chat_msgs)
-#     while True:
-#         await asyncio.sleep(0.5)
-#         for m in chat_msgs[last_idx:]:
-#             if m[0] != my_name:
-#                 msg_box.append(output.put_markdown('`%s`: %s' % m, sanitize=True))
-
-#         # if len(chat_msgs) > MAX_MESSAGES_CNT:
-#         #     del chat_msgs[100:]
-
-#         last_idx = len(chat_msgs)
-
-
 class AsyncDatabaseConnectionManager:
     _instance = None
     _lock = asyncio.Lock()
