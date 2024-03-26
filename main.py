@@ -186,21 +186,22 @@ class RefreshMsg:
             )).fetchall()
             messages = list(messages)
             messages.reverse()
-            if self.last_index < messages[len(messages)-1][0]:
-                self.messages = messages
-                for x in messages:
-                    if x[0] <= self.last_index:
-                        continue
-                    try:
-                        msg = functions.decrypt_message(x[2], self.room.private_key, self.room.passphrase)
-                    except binascii.Error:
-                        msg = x[2]
-                    except ValueError:
-                        msg = x[2]
-                    self.msg_box.append(output.put_markdown('`%s`: %s' % (x[1], msg), sanitize=True))
-                if self.last_index == 0:
-                    ...
-                self.last_index = messages[len(messages)-1][0]
+            if messages:
+                if self.last_index < messages[len(messages)-1][0]:
+                    self.messages = messages
+                    for x in messages:
+                        if x[0] <= self.last_index:
+                            continue
+                        try:
+                            msg = functions.decrypt_message(x[2], self.room.private_key, self.room.passphrase)
+                        except binascii.Error:
+                            msg = x[2]
+                        except ValueError:
+                            msg = x[2]
+                        self.msg_box.append(output.put_markdown('`%s`: %s' % (x[1], msg), sanitize=True))
+                    if self.last_index == 0:
+                        ...
+                    self.last_index = messages[len(messages)-1][0]
 
 
 async def add_msg(
@@ -242,4 +243,4 @@ async def chat(user: functions.User, room: functions.Room):
 
 
 if __name__ == '__main__':
-    pywebio.start_server(main, debug=True, port=9999)
+    pywebio.start_server(main, debug=False, port=8080)
