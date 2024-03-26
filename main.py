@@ -228,9 +228,13 @@ async def online(user: functions.User, db: aiosqlite.Connection, msg_box: output
             if time.time()-15 > online_timestamp and nickname not in _offline_list:
                 msg_box.append(output.put_markdown('`%s`: %s' % ('📢', f'`{nickname}` leaves the room.'), sanitize=True))
                 _offline_list.append(nickname)
+                if nickname in _online_list:
+                    _online_list.remove(nickname)
             elif nickname not in _online_list:
                 msg_box.append(output.put_markdown('`%s`: %s' % ('📢', f'`{nickname}` joins the room.'), sanitize=True))
                 _online_list.append(nickname)
+                if nickname in _offline_list:
+                    _offline_list.remove(nickname)
 
         if user_in_list:
             await sql.execute(
