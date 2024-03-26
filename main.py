@@ -1,6 +1,8 @@
+# 1.1
 import asyncio
 import binascii
 from contextlib import asynccontextmanager
+import time
 import pywebio
 import pywebio.output as output
 import pywebio.input as input
@@ -155,7 +157,7 @@ async def main():
 
 
 class RefreshMsg:
-    def __init__(self, msg_box: output.Output, room: functions.Room) -> None:
+    def __init__(self, msg_box: output.OutputList, room: functions.Room) -> None:
         self.msg_box = msg_box
         self.last_index = 0
         self.room = room
@@ -167,7 +169,7 @@ class RefreshMsg:
         while True:
             await asyncio.sleep(0.5)
             messages = await (await sql.execute(
-                "SELECT id, nickname, message, created_at FROM messages ORDER BY id DESC LIMIT 25"
+                "SELECT id, nickname, message, created_at, type FROM messages ORDER BY id DESC LIMIT 25"
             )).fetchall()
             messages = list(messages)
             messages.reverse()
@@ -183,7 +185,8 @@ class RefreshMsg:
                             msg = x[2]
                         except ValueError:
                             msg = x[2]
-                        self.msg_box.append(output.put_markdown('`%s`: %s' % (x[1], msg), sanitize=True))
+                        nickname = x[1] if x[4] != 2 else '📢'
+                        self.msg_box.append(output.put_markdown('`%s`: %s' % (nickname, msg), sanitize=True))
                     if self.last_index == 0:
                         ...
                     self.last_index = messages[len(messages)-1][0]
@@ -191,27 +194,67 @@ class RefreshMsg:
 
 async def add_msg(
             msg: str, user: functions.User,
-            room: functions.Room, db: aiosqlite.Connection
+            room: functions.Room, db: aiosqlite.Connection, type: int = 1
         ):
     sql = await db.cursor()
     encrypted_msg = functions.encrypt_message(msg, room.public_key, room.passphrase)
     await sql.execute(
-        "INSERT INTO messages (nickname, message) VALUES (?, ?)",
-        (user.nickname, encrypted_msg)
+        "INSERT INTO messages (nickname, message, type) VALUES (?, ?, ?)",
+        (user.nickname, encrypted_msg, type)
     )
     await db.commit()
+
+
+async def online(user: functions.User, db: aiosqlite.Connection, msg_box: output.OutputList):
+    sql = await db.cursor()
+    _offline_list = None
+    _online_list = None
+    while True:
+        await asyncio.sleep(1)
+        await sql.execute("SELECT nickname, online_timestamp FROM online")
+        online_list = await sql.fetchall()
+        if _offline_list is None and _online_list is None:
+            _offline_list = []
+            _online_list = []
+            for nickname, online_timestamp in online_list:
+                if time.time()-15 > online_timestamp:
+                    _offline_list.append(nickname)
+                else:
+                    _online_list.append(nickname)
+        user_in_list = False
+        for nickname, online_timestamp in online_list:
+            if nickname == user.nickname:
+                user_in_list = True
+            if time.time()-15 > online_timestamp and nickname not in _offline_list:
+                msg_box.append(output.put_markdown('`%s`: %s' % ('📢', f'`{nickname}` leaves the room.'), sanitize=True))
+                _offline_list.append(nickname)
+            elif nickname not in _online_list:
+                msg_box.append(output.put_markdown('`%s`: %s' % ('📢', f'`{nickname}` joins the room.'), sanitize=True))
+                _online_list.append(nickname)
+
+        if user_in_list:
+            await sql.execute(
+                "UPDATE online SET online_timestamp = ? WHERE nickname = ?",
+                (time.time(), user.nickname)
+            )
+        else:
+            await sql.execute(
+                "INSERT INTO online (nickname, online_timestamp) VALUES (?, ?)",
+                (user.nickname, time.time())
+            )
+        await db.commit()
 
 
 async def chat(user: functions.User, room: functions.Room):
     room_db = functions.room_db(room.id)
     msg_box = output.output()
     output.put_scrollable(msg_box, height=300, keep_bottom=True)
-
     async with db_manager.connection_context(room_db) as db:
         db: aiosqlite.Connection
 
         refresher = RefreshMsg(msg_box, room)
         run_async(refresher.refresh_msg(db))
+        run_async(online(user, db, msg_box))
 
         while True:
             data = await input.input_group('Send message', [

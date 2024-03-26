@@ -1,3 +1,4 @@
+# 1.1
 import os
 import aiosqlite
 import random
@@ -126,6 +127,37 @@ class UnknownRoom(Room):
         self.load_succes = False
 
 
+async def room_database(db: aiosqlite.Connection):
+    sql = await db.cursor()
+    await sql.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS encryption (
+            public_key TEXT NOT NULL,
+            private_key TEXT NOT NULL,
+            passphrase_sha512 TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS accounts (
+            nickname TEXT PRIMARY KEY,
+            password_sha256 TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nickname TEXT NOT NULL,
+            message TEXT NOT NULL,
+            attachment TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            type INTEGER DEFAULT 1,
+            FOREIGN KEY (nickname) REFERENCES accounts(nickname)
+        );
+        CREATE TABLE IF NOT EXISTS online (
+            nickname TEXT,
+            online_timestamp INTEGER,
+            FOREIGN KEY (nickname) REFERENCES accounts(nickname)
+        )
+        """
+    )
+
+
 async def create_room(passphrase: str | None = None) -> Room:
     passphrase = passphrase or generate_passphrase(9, 3, 8)
     passphrase_sha512 = sha512(passphrase)
@@ -133,27 +165,7 @@ async def create_room(passphrase: str | None = None) -> Room:
     keys = generate_rsa_key(passphrase)
     async with aiosqlite.connect(room_db(id)) as db:
         sql = await db.cursor()
-        await sql.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS encryption (
-                public_key TEXT NOT NULL,
-                private_key TEXT NOT NULL,
-                passphrase_sha512 TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accounts (
-                nickname TEXT PRIMARY KEY,
-                password_sha256 TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nickname TEXT NOT NULL,
-                message TEXT NOT NULL,
-                attachment TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (nickname) REFERENCES accounts(nickname)
-            )
-            """
-        )
+        await room_database(db)
         await sql.execute(
             "INSERT INTO encryption (public_key, private_key, passphrase_sha512) VALUES (?, ?, ?)",
             (keys[1], keys[0], passphrase_sha512)
@@ -169,6 +181,7 @@ async def load_room(passphrase: str | None = None) -> Room:
     passphrase_sha512 = sha512(passphrase)
     async with aiosqlite.connect(room_db(id)) as db:
         sql = await db.cursor()
+        await room_database(db)
         encryption = await (await sql.execute(
             "SELECT public_key, private_key, passphrase_sha512 FROM encryption"
         )).fetchone()
