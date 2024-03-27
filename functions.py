@@ -65,7 +65,7 @@ def generate_passphrase(count, min_length, max_lenght) -> str:
     return ' '.join(list)
 
 
-def generate_rsa_key(passphrase: str) -> tuple[bytes]:
+def generate_rsa_key(passphrase: str) -> tuple[bytes, bytes]:
     passphrase = sha512(passphrase)
     key = RSA.generate(2048)
     encrypted_key = key.export_key(passphrase=passphrase, pkcs=8,
@@ -75,14 +75,14 @@ def generate_rsa_key(passphrase: str) -> tuple[bytes]:
     return encrypted_key, public_key
 
 
-def encrypt_message(message: str | bytes, public_key: bytes | str, passphrase: str) -> str:
+def encrypt_message(message: bytes | str, public_key: bytes | str, passphrase: str) -> str:
     if isinstance(message, str):
         message = message.encode()
     if isinstance(public_key, str):
         public_key = public_key.encode()
     passphrase = sha512(passphrase)
-    public_key = RSA.import_key(public_key, passphrase=passphrase)
-    cipher = PKCS1_OAEP.new(public_key)
+    imported_public_key = RSA.import_key(public_key, passphrase=passphrase)
+    cipher = PKCS1_OAEP.new(imported_public_key)
     encrypted_message = cipher.encrypt(message)
     return base64.b64encode(encrypted_message).decode()
 
@@ -93,8 +93,8 @@ def decrypt_message(encrypted_message: str | bytes, private_key: bytes | str, pa
     if isinstance(private_key, str):
         private_key = private_key.encode()
     passphrase = sha512(passphrase)
-    private_key = RSA.import_key(private_key, passphrase=passphrase)
-    cipher = PKCS1_OAEP.new(private_key)
+    imported_private_key = RSA.import_key(private_key, passphrase=passphrase)
+    cipher = PKCS1_OAEP.new(imported_private_key)
     decoded_message = base64.b64decode(encrypted_message)
     decrypted_message = cipher.decrypt(decoded_message)
     return decrypted_message.decode()
@@ -113,7 +113,10 @@ def room_db(id: int) -> str:
 
 
 class Room():
-    def __init__(self, id: int, passphrase: str, public_key: bytes, private_key: bytes) -> None:
+    def __init__(
+                self, id: int | None, passphrase: str | None,
+                public_key: bytes | None, private_key: bytes | None
+            ) -> None:
         self.id = id
         self.passphrase = passphrase
         self.public_key = public_key
@@ -174,7 +177,7 @@ async def create_room(passphrase: str | None = None) -> Room:
         return Room(id, passphrase, keys[1], keys[0])
 
 
-async def load_room(passphrase: str | None = None) -> Room:
+async def load_room(passphrase: str) -> Room:
     id = get_room_id(passphrase)
     if not os.path.exists(room_db(id)):
         return UnknownRoom()

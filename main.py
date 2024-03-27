@@ -3,17 +3,15 @@ import asyncio
 import binascii
 from contextlib import asynccontextmanager
 import time
-import pywebio
-import pywebio.output as output
-import pywebio.input as input
+import pywebio  # type: ignore
+import pywebio.output as output  # type: ignore
+import pywebio.input as input  # type: ignore
 import aiosqlite
 import functions
 
-from pywebio.session import run_async, set_env
+from pywebio.session import run_async, set_env  # type: ignore
 
 # MAX_MESSAGES_CNT = 200
-
-chat_msgs = []
 
 
 class AsyncDatabaseConnectionManager:
@@ -167,7 +165,7 @@ class RefreshMsg:
         self.msg_box = msg_box
         self.last_index = 0
         self.room = room
-        self.messages = {}
+        self.messages: list = []
 
     async def refresh_msg(self, db: aiosqlite.Connection):
         sql = await db.cursor()
@@ -261,8 +259,6 @@ async def chat(user: functions.User, room: functions.Room):
     msg_box = output.output()
     output.put_scrollable(msg_box, height=300, keep_bottom=True)
     async with db_manager.connection_context(room_db) as db:
-        db: aiosqlite.Connection
-
         refresher = RefreshMsg(msg_box, room)
         run_async(refresher.refresh_msg(db))
         run_async(online(user, db, msg_box))
