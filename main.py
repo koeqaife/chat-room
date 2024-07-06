@@ -78,7 +78,7 @@ async def main():
         while not success:
             passphrase = (await _input("Room key", type=input.PASSWORD, required=True))["data"]
             room = await functions.load_room(passphrase)
-            success = room.load_succes
+            success = room.load_success
             if not success:
                 output.toast("No room found with this key", duration=3, color="error")
         success = False
@@ -184,7 +184,12 @@ class RefreshMsg:
                         if x[0] <= self.last_index:
                             continue
                         try:
-                            msg = functions.decrypt_message(x[2], self.room.private_key, self.room.passphrase)
+                            private_key = self.room.private_key
+                            passphrase = self.room.passphrase
+                            if isinstance(private_key, (bytes, str)) and isinstance(passphrase, str):
+                                msg = functions.decrypt_message(x[2], private_key, passphrase)
+                            else:
+                                raise TypeError("'room.public_key' or 'room.passphrase' type must be 'bytes'")
                         except binascii.Error:
                             msg = x[2]
                         except ValueError:
@@ -201,7 +206,10 @@ async def add_msg(
             room: functions.Room, db: aiosqlite.Connection, type: int = 1
         ):
     sql = await db.cursor()
-    encrypted_msg = functions.encrypt_message(msg, room.public_key, room.passphrase)
+    if isinstance(room.public_key, (bytes, str)) and isinstance(room.passphrase, str):
+        encrypted_msg = functions.encrypt_message(msg, room.public_key, room.passphrase)
+    else:
+        raise TypeError("'room.public_key' or 'room.passphrase' type must be 'bytes'")
     await sql.execute(
         "INSERT INTO messages (nickname, message, type) VALUES (?, ?, ?)",
         (user.nickname, encrypted_msg, type)
@@ -255,7 +263,10 @@ async def online(user: functions.User, db: aiosqlite.Connection, msg_box: output
 
 async def chat(user: functions.User, room: functions.Room):
     set_env(title='Chat', output_animation=False)
-    room_db = functions.room_db(room.id)
+    if room.id is not None:
+        room_db = functions.room_db(room.id)
+    else:
+        raise TypeError("'room.id' type must be 'str'")
     msg_box = output.output()
     output.put_scrollable(msg_box, height=300, keep_bottom=True)
     async with db_manager.connection_context(room_db) as db:
@@ -278,4 +289,4 @@ async def chat(user: functions.User, room: functions.Room):
 
 
 if __name__ == '__main__':
-    pywebio.start_server(main, debug=False, port=8080)
+    pywebio.start_server(main, debug=False, port=8080, reconnect_timeout=15)
