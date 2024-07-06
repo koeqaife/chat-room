@@ -1,4 +1,4 @@
-# 1.1.2
+# 1.1.2 Modified
 import os
 import aiosqlite
 import random
@@ -7,6 +7,33 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 import hashlib
 import base64
+import asyncio
+import hmac
+from cryptography.fernet import Fernet
+
+
+encryption_key = Fernet.generate_key()
+cipher_suite = Fernet(encryption_key)
+
+key_file = ".secret_key.txt"
+
+
+def generate_and_save_secret_key(file_path: str, length: int = 32) -> None:
+    if not os.path.exists(file_path):
+        secret_key = os.urandom(length)
+        with open(file_path, 'wb') as file:
+            file.write(secret_key)
+
+
+def read_secret_key(file_path: str) -> bytes:
+    with open(file_path, 'rb') as file:
+        secret_key = file.read()
+    return secret_key
+
+
+generate_and_save_secret_key(key_file)
+
+secret_key = read_secret_key(key_file)
 
 
 def generate_random_word(length) -> str:
@@ -53,15 +80,15 @@ def generate_random_word(length) -> str:
 
 
 def sha256(string: str) -> str:
-    return hashlib.sha256(string.encode()).hexdigest()
+    return hmac.new(secret_key, string.encode(), hashlib.sha256).hexdigest()
 
 
 def sha512(string: str) -> str:
-    return hashlib.sha512(string.encode()).hexdigest()
+    return hmac.new(secret_key, string.encode(), hashlib.sha512).hexdigest()
 
 
-def generate_passphrase(count, min_length, max_lenght) -> str:
-    list = [generate_random_word(random.randint(min_length, max_lenght)) for _ in range(count)]
+def generate_passphrase(count, min_length, max_length) -> str:
+    list = [generate_random_word(random.randint(min_length, max_length)) for _ in range(count)]
     return ' '.join(list)
 
 
@@ -100,6 +127,41 @@ def decrypt_message(encrypted_message: str | bytes, private_key: bytes | str, pa
     return decrypted_message.decode()
 
 
+async def encrypt_message_async(message: bytes | str, public_key: bytes | str, passphrase: str) -> str:
+    if isinstance(message, str):
+        message = message.encode()
+    if isinstance(public_key, str):
+        public_key = public_key.encode()
+    passphrase = sha512(passphrase)
+
+    def encrypt():
+        imported_public_key = RSA.import_key(public_key, passphrase=passphrase)
+        cipher = PKCS1_OAEP.new(imported_public_key)
+        encrypted_message = cipher.encrypt(message)
+        return base64.b64encode(encrypted_message).decode()
+
+    encrypted_message = await asyncio.to_thread(encrypt)
+    return encrypted_message
+
+
+async def decrypt_message_async(encrypted_message: str | bytes, private_key: bytes | str, passphrase: str) -> str:
+    if isinstance(encrypted_message, str):
+        encrypted_message = encrypted_message.encode()
+    if isinstance(private_key, str):
+        private_key = private_key.encode()
+    passphrase = sha512(passphrase)
+
+    def decrypt():
+        imported_private_key = RSA.import_key(private_key, passphrase=passphrase)
+        cipher = PKCS1_OAEP.new(imported_private_key)
+        decoded_message = base64.b64decode(encrypted_message)
+        decrypted_message = cipher.decrypt(decoded_message)
+        return decrypted_message.decode()
+
+    decrypted_message = await asyncio.to_thread(decrypt)
+    return decrypted_message
+
+
 def get_room_id(passphrase: str) -> int:
     passphrase = sha512(passphrase)
     return random.Random(passphrase).randint(0, 10**25)
@@ -121,13 +183,13 @@ class Room():
         self.passphrase = passphrase
         self.public_key = public_key
         self.private_key = private_key
-        self.load_succes = True
+        self.load_success = True
 
 
 class UnknownRoom(Room):
     def __init__(self) -> None:
         super().__init__(None, None, None, None)
-        self.load_succes = False
+        self.load_success = False
 
 
 async def room_database(db: aiosqlite.Connection):
@@ -161,8 +223,9 @@ async def room_database(db: aiosqlite.Connection):
     )
 
 
-async def create_room(passphrase: str | None = None) -> Room:
-    passphrase = passphrase or generate_passphrase(9, 3, 8)
+async def create_room(passphrase: str | None = None, prefix: str | None = None) -> Room:
+    prefix = prefix or ""
+    passphrase = passphrase or f"{prefix}{generate_passphrase(9, 3, 8)}"
     passphrase_sha512 = sha512(passphrase)
     id = get_room_id(passphrase)
     keys = generate_rsa_key(passphrase)
@@ -265,7 +328,7 @@ async def test():
             check_password2 = await user2.check_password(db)
 
             users_test = "Passed" if user_exists and check_password and not check_password2 else "Failed"
-            print(f"User system test: {users_test}")
+            print(f"Auth test: {users_test}")
 
         input("\nPress Enter to exit")
     finally:
@@ -278,6 +341,4 @@ async def test():
 
 
 if __name__ == "__main__":
-    import asyncio
-
     asyncio.run(test())
